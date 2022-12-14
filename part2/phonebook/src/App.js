@@ -1,15 +1,19 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import Notification from "./components/notification";
+import personService from "./services/persons";
 
 const App = () => {
-  const [persons, setPersons] = useState([
-    { name: "Arto Hellas", number: "040-123456", id: 1 },
-    { name: "Ada Lovelace", number: "39-44-5323523", id: 2 },
-    { name: "Dan Abramov", number: "12-43-234345", id: 3 },
-    { name: "Mary Poppendieck", number: "39-23-6423122", id: 4 },
-  ]);
+  const [persons, setPersons] = useState([]);
   const [newName, setNewName] = useState("");
   const [newNumber, setNewNumber] = useState("");
   const [newFilter, setNewFilter] = useState("");
+  const [notificationMessage, setNotificationMessage] = useState(null);
+
+  useEffect(() => {
+    personService.getAll().then((persons) => {
+      setPersons(persons);
+    });
+  }, []);
 
   const contactsToShow =
     newFilter === ""
@@ -26,16 +30,62 @@ const App = () => {
   const addContact = (event) => {
     event.preventDefault();
     if (persons.some((person) => person.name === newName)) {
-      alert(`${newName} is already added to phonebook`);
+      const person = persons.find((p) => p.name === newName);
+      if (
+        window.confirm(
+          `${person.name} is already added to phonebook, replace the old number with a new one?`
+        )
+      ) {
+        updateContact(person.id, newNumber);
+      }
       clearContactFields();
     } else {
       const newPerson = {
         name: newName,
         number: newNumber,
-        id: persons.length + 1,
+        id: persons[persons.length - 1].id + 1,
       };
-      setPersons(persons.concat(newPerson));
+      personService.create(newPerson).then((res) => {
+        console.log(`created contact ${newPerson.id}`);
+        setNotificationMessage(`Added ${newPerson.name}`);
+        setTimeout(() => {
+          setNotificationMessage(null);
+        }, 5000);
+        setPersons(persons.concat(newPerson));
+      });
       clearContactFields();
+    }
+  };
+
+  const updateContact = (id, phoneNumber) => {
+    const person = persons.find((p) => p.id === id);
+    const updatedContact = { ...person, number: phoneNumber };
+
+    personService
+      .update(id, updatedContact)
+      .then((returnedPerson) => {
+        setNotificationMessage(`Updated ${person.name}'s phone number`);
+        setTimeout(() => {
+          setNotificationMessage(null);
+        }, 5000);
+        setPersons(persons.map((n) => (n.id !== id ? n : returnedPerson)));
+      })
+      .catch((err) => {
+        setNotificationMessage(
+          `Information of ${person.name} has already been removed from the server`
+        );
+        setTimeout(() => {
+          setNotificationMessage(null);
+        }, 5000);
+      });
+  };
+
+  const deleteContact = (id) => {
+    if (window.confirm(`Do you really want to delete contact ${id}?`)) {
+      setPersons(persons.filter((person) => person.id !== id));
+      personService.del(id).then((res) => {
+        console.log(`deleted contact ${id}`);
+      });
     }
   };
 
@@ -51,6 +101,7 @@ const App = () => {
 
   return (
     <div>
+      <Notification message={notificationMessage} />
       <h2>Phonebook</h2>
       <ContactFilter
         filterText={newFilter}
@@ -63,7 +114,11 @@ const App = () => {
         handleNameChange={handleNameChange}
         handleNumberChange={handleNumberChange}
       />
-      <Contacts persons={contactsToShow} filter={newFilter} />
+      <Contacts
+        persons={contactsToShow}
+        filter={newFilter}
+        deleteContact={deleteContact}
+      />
     </div>
   );
 };
@@ -102,22 +157,27 @@ const ContactForm = ({
   );
 };
 
-const Contacts = ({ persons }) => {
+const Contacts = ({ persons, deleteContact }) => {
   return (
     <>
       <ul>
         {persons.map((person) => (
-          <Contact person={person} key={person.name} />
+          <Contact
+            person={person}
+            key={person.id}
+            deleteContact={deleteContact}
+          />
         ))}
       </ul>
     </>
   );
 };
 
-const Contact = ({ person }) => {
+const Contact = ({ person, deleteContact }) => {
   return (
     <li>
       {person.name} {person.number}
+      <button onClick={() => deleteContact(person.id)}>delete</button>
     </li>
   );
 };
